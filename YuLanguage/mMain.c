@@ -1,6 +1,17 @@
 #include "Token.h"
 #include "ASTBuild.h"
 
+void PrintNode(NODE_DATA* node)
+{
+	printf("Node str: %s\n", node->strtoken);
+	printf("Node child num: %d\n", node->childs.count);
+	for (int i = 0; i < node->childs.count; i++)
+	{
+		printf("Node %d child : %d\n", i, node->childs.childnum[i]);
+	}
+	printf("\n");
+}
+
 int main(int argc, char* argv[])
 {
 	char* name = "E:\\zengl\\v0.0.8\\zengl_lang_v0.0.8_forXP\\zengl_lang_v0.0.8\\zengl_lang_v0.0.8\\test.zl";
@@ -14,7 +25,7 @@ int main(int argc, char* argv[])
 	memset(data, 0, sizeof(TOKEN_DATA) * 100);
 
 	AST_TREE Ast;
-	memset(&Ast, 0, sizeof(AST_TREE));
+	InitAstTree(&Ast);
 
 	source.filename = name;
 	source.needread = TRUE;
@@ -33,15 +44,22 @@ int main(int argc, char* argv[])
 			break;
 	}
 
-	for (int i = 0; i < count; i++)
+	//for (int i = 0; i < count; i++)
+	//{
+	//	if (data[i].type == TOKEN_TYPE_STR)
+	//		printf("'%s' ", data[i].str);
+	//	else
+	//		printf("%s ", data[i].str);
+	//	if (data[i].str[0] == ';')
+	//		printf("\n");
+	//}
+
+	BuildAstTree(&Ast);
+	for (int i = 0; i < Ast.count; i++)
 	{
-		if (data[i].type == TOKEN_TYPE_STR)
-			printf("'%s' ", data[i].str);
-		else
-			printf("%s ", data[i].str);
-		if (data[i].str[0] == ';')
-			printf("\n");
+		PrintNode(&Ast.nodes[i]);
 	}
+	
 
 	system("pause");
 	return 0;

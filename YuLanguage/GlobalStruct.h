@@ -120,7 +120,7 @@ typedef unsigned char BOOL;
 							    ast->nodes[nodenum].type == TOKEN_TYPE_REVERSE))
 //判断节点类型是否为表达式
 #define ISTOKCATEOP(ast) ISTOKCATE5(ast, TOKEN_CATEGORY_ASSIGN,TOKEN_CATEGORY_PLUS_MINIS,TOKEN_CATEGORY_TIM_DIV,TOKEN_CATEGORY_RELATION,TOKEN_CATEGORY_LOGIC)
-#define ISTOKCATEXOP(ast, nodenum) ISTOKCATE5(ast, nodenum, TOKEN_CATEGORY_ASSIGN,TOKEN_CATEGORY_PLUS_MINIS,TOKEN_CATEGORY_TIM_DIV,TOKEN_CATEGORY_RELATION,TOKEN_CATEGORY_LOGIC)
+#define ISTOKCATEXOP(ast, nodenum) ISTOKCATEX5(ast, nodenum, TOKEN_CATEGORY_ASSIGN,TOKEN_CATEGORY_PLUS_MINIS,TOKEN_CATEGORY_TIM_DIV,TOKEN_CATEGORY_RELATION,TOKEN_CATEGORY_LOGIC)
 
 typedef enum
 {
@@ -189,23 +189,23 @@ typedef enum
 
 typedef struct
 {
-	unsigned int count;
-	unsigned int size;
+	int count;
+	int size;
 	char* str;
 	ENUM_TOKEN_TYPE type;
 	RESERVE_TYPE reserve;
 
-	unsigned int curline;
-	unsigned int curcolum;
+	int curline;
+	int curcolum;
 }TOKEN_DATA;
 
 #define Default_Token_Size 24
 
 typedef struct
 {
-	unsigned int count;
-	unsigned int size;
-	unsigned int* childnum;
+	int count;
+	int size;
+	int* childnum;
 }NODE_CHILD;
 
 #define Default_Child_Size 3
@@ -221,10 +221,10 @@ typedef struct
 	char* strtoken;
 
 	NODE_CHILD childs;
-	unsigned int nextnode;
+	int nextnode;
 
-	unsigned int line_no;
-	unsigned int colum_no;
+	int line_no;
+	int colum_no;
 
 	BOOL isprinted;
 
@@ -239,20 +239,20 @@ typedef struct
 
 typedef struct
 {
-	unsigned int size;
-	unsigned int count;
+	int size;
+	int count;
 	STACK_DATA* stacks;
 }STACKLIST_DATA;
 #define Default_Stack_Size 5		//默认堆栈大小
 
 typedef struct
 {
-	unsigned int size;
-	unsigned int count;
+	int size;
+	int count;
 
 	NODE_DATA* nodes;
 
-	unsigned int rootnode;
+	int rootnode;
 
 	//算法用到的变量
 	BOOL is_builded;				//构建完成标志

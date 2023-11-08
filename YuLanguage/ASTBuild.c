@@ -17,7 +17,7 @@ BOOL AddNode(TOKEN_DATA* token, AST_TREE* ast)
 	if (token == NULL)
 		return FALSE;
 	if (token->type == TOKEN_TYPE_ERROR || token->type == TOKEN_TYPE_DEFAULT || token->type == TOKEN_TYPE_ENDFILE)
-		return;
+		return FALSE;
 
 	if (ast->nodes == NULL)
 	{
@@ -155,7 +155,11 @@ BOOL get_last_stack(STACKLIST_DATA* stack, STACK_DATA* data)
 	if (stack == NULL)
 		return ReturnFalse("stack is null in get last stack");
 	if (stack->count <= 0)
-		return ReturnFalse("stack list null");
+	{
+		//堆栈中莫得东西，返回最低的优先级不会干扰到其他优先级判断
+		data->token_level =data->token_category = -1;
+		return TRUE;
+	}
 
 	memcpy(data, &stack->stacks[stack->count - 1], sizeof(STACK_DATA));
 	return TRUE;
@@ -212,6 +216,17 @@ BOOL RemoveLastChild(NODE_DATA* node, unsigned int* tmp)
 //实际在语法树中，优先级越低，在语法树中越靠近根节点，运行时先计算优先级高的各叶子节点直接的操作符，最后运行优先级低的操作符
 int express_level(AST_TREE* ast)
 {
+	//堆栈的作用
+	//语法树规则：优先级高的先执行，优先级低的后执行，在语法树中，优先级高的操作符为优先级低的操作符的子节点
+	//判断优先级时，若前一个优先级高于后一个，那么有两种情况，堆栈中若存在数据，后一个优先级与前一个优先级低的那个才是现在这个节点的parent
+	//例如a = b + c * d + e;
+	//当执行到b + c，b成为+的子节点，后发现后面的*优先级高于+
+	//此时*应当为+的子节点，于是将+压栈，先生成*的语法树，后将*加为+的子节点即可，c成为*的子节点
+	//但之后发现*后面的+，优先级比*低，这时*有两种情况，成为第一个+的子节点还是第二个+的子节点，于是与堆栈比较，两个+根据从左到右的顺序栈中的+优先级高，所以*应当成为栈中+的子节点，先执行
+	//于是将d变为*的第二个子节点后，跳出了循环，返回了*的为位置
+	//之后按照顺序，后一个节点为+，依然根据从左到右的原则，第一个+成为后一个+的子节点
+	//函数中有的地方压入了-1，由于-1为最低的优先级，所以不管后面如何跟栈中优先级比较，也是-1优先级低(栈中优先级低)，永远不会由于后面指令优先级更低而跳出递归，例如括号内无论如何优先级比括号外高的情况
+
 	NODE_DATA* nodes = ast->nodes;
 	PROCESS_STATES state = STATES_START;
 	unsigned int p = -1;//父节点
@@ -245,6 +260,7 @@ int express_level(AST_TREE* ast)
 					push_stack(&ast->stack, ast->nodes, -1);
 
 					p = express_level(ast);//生成括号内语法树
+					//此时cur指向的应该是右括号的位置
 
 					ast->stack.count = tmpcount;  //恢复递归之前的堆栈空间。
 					ast->cur_index++;  //递归结束后，curnode指向右括号之前的节点，所以将其加一，使其指向右括号用于下面的判断。
@@ -256,7 +272,9 @@ int express_level(AST_TREE* ast)
 					}
 					else if (ISTOKENTYPEX2(ast, tmpnode - 1, TOKEN_TYPE_ASSIGN, TOKEN_TYPE_LBRACKET))
 					{
-						//左括号左边是赋值或还是左括号，则接着生成本条语法树。
+						//tmpnode为之前左括号位置，此处判断的为左括号左边的节点
+						//左括号左边是赋值或还是左括号,意味着递归未结束，对上一个括号来说括号内没有全部生成结束
+						//左括号左边为等于，例如a = b = (c + d) * e;则需要继续生成后面的*e最后作为第二个=的子节点
 						//例如 a = ((a+b)*5) 在生成a+b的语法树后因为state设为了INID就会继续和*5生成语法树，否则就只会生成a+b而丢失乘法节点和5的节点。
 						state = STATES_INID;
 					}
@@ -292,7 +310,7 @@ int express_level(AST_TREE* ast)
 			break;
 		case STATES_INID:
 			//输入ID模式
-			if (ISTOKCATEOP(ast))//上一个为ID，这一个为操作符的情况
+			if (ISTOKCATEOP(ast))
 			{
 				//INID状态遇到表达式操作符如加减乘除，大于等于等，就将之前的父节点加入当前节点的子节点，并将当前节点设为新的父节点，并进入INOP状态。
 				AddChildNode(ast, ast->cur_index, p);
@@ -313,14 +331,17 @@ int express_level(AST_TREE* ast)
 				return -1;
 			}
 			break;
-		case STATES_INOP://上一个为操作符
-			if (ISTOKCATE(ast, TOKEN_CATEGORY_FACTOR) && (ISTOKCATEOP(ast)))//这一个token为操作因子，且确认上一个为操作符
+		case STATES_INOP://操作符输入模式
+			if (ISTOKCATE(ast, TOKEN_CATEGORY_FACTOR) && (ISTOKCATEXOP(ast, ast->cur_index - 1)))//这一个token为操作因子，且确认上一个为操作符
 			{
 				if (ISTOKCATEXOP(ast, ast->cur_index + 1))
 				{
-					//下一个token也为操作符，则将上一个token优先级与下一个token优先级进行比较
-					if (ast->nodes[ast->cur_index - 1].level == ast->nodes[ast->cur_index + 1].level)
+					//此情况为当前节点为节点，前后均为操作符
+					//下一个token也为操作符，则将上一个token优先级与下一个token优先级进行比较，目的为了判断这个因子作为哪一个操作符的子节点
+					if (ast->nodes[p].level == ast->nodes[ast->cur_index + 1].level)
 					{
+						//前后优先级相同应遵循从左到右的原则，则左边的操作符优先级高，但有一种特殊情况，两个都是=则后边的优先级高
+						//例如a = b = c = d;对c来说肯定是先把d的值付给c，再把c的值付给b
 						if (ISTOKENTYPEX(ast, ast->cur_index+1, TOKEN_TYPE_ASSIGN))
 						{
 							//如果操作因子之后的是一个赋值运算符的话，因为表达式除了第一个赋值符优先级低外，其他的赋值符都有最高的优先级，所以递归express2先生成赋值符的表达式。
@@ -335,15 +356,17 @@ int express_level(AST_TREE* ast)
 						else
 						{
 							//上一个与下一个token优先级相同,当前token加为上一操作符子节点，上衣操作符作为下一操作符子节点
+							//p优先级高，当前节点作为p的子节点，p作为下一个操作符的子节点
 							AddChildNode(ast, p, ast->cur_index);
-							AddChildNode(ast, ast->cur_index, p);
+							AddChildNode(ast, ast->cur_index + 1, p);
 							ast->cur_index++;
 							p = ast->cur_index;
 						}
 					}
-					else if (ast->nodes[ast->cur_index - 1].level > ast->nodes[ast->cur_index + 1].level)
+					else if (ast->nodes[p].level > ast->nodes[ast->cur_index + 1].level)
 					{
 						//上一个操作符优先级大于这一个操作符
+						//与上面相同的特殊情况，不管前一个是啥，后一个若为等号也是等号优先级高
 						if (ISTOKENTYPEX(ast, ast->cur_index + 1, TOKEN_TYPE_ASSIGN))
 						{
 							//如果操作因子之后的是一个赋值运算符的话，因为表达式除了第一个赋值符优先级低外，其他的赋值符都有最高的优先级，所以递归express2先生成赋值符的表达式。
@@ -357,7 +380,8 @@ int express_level(AST_TREE* ast)
 						}
 						else
 						{
-							//当前节点加入之前父节点中
+							//可以肯定的时当前token一定是高优先级（前一个操作符）的子节点，但前一个节点是否为后一个节点的子节点不能确定
+							//这是因为堆栈中可能存在比后一个优先级更高的节点，那么上一个操作符就应该是堆栈中操作符的子节点
 							AddChildNode(ast, p, ast->cur_index);
 							//获取上一次堆栈信息
 							STACK_DATA last;
@@ -365,18 +389,22 @@ int express_level(AST_TREE* ast)
 							if (last.token_category == ast->nodes[ast->cur_index + 1].category ||
 								last.token_level > ast->nodes[ast->cur_index + 1].level)
 							{
+								//堆栈中优先级高，跳出后返回的p就是上一个操作符，他会成为堆栈中操作符的子节点
 								//栈中类别与下一个操作符相同或栈中优先级高于下一个操作符则返回，优先处理栈中语法树生成
 								state = STATES_DOWN;
 							}
 							else if (last.token_level < ast->nodes[ast->cur_index + 1].level)
 							{
+								//下一个操作符优先级高，那么上一个节点就应当变成下一个操作符的子节点
 								//栈中优先级低，则继续当前操作
-								AddChildNode(ast, ast->cur_index, p);
+								AddChildNode(ast, ast->cur_index + 1, p);
 								ast->cur_index++;
 								p = ast->cur_index;
 							}
 							else
 							{
+								//堆栈中的优先级竟然比下一个操作符优先级还高
+								//按道理堆栈中的高优先级操作符至少因该成为下一个操作符的子节点（也可能是上一个），出错
 								Fault("syntax error inop 1 (语法错误：优先级判定失败！位置:express2函数 inop 1)");
 								return -1;
 							}
@@ -395,7 +423,8 @@ int express_level(AST_TREE* ast)
 				}
 				else
 				{
-					//操作因子后不是操作符，直接将这个操作因子添加到之前操作符子结点中
+					//操作因子后不是操作符，直接将这个操作因子添加到之前操作符子结点中,有可能右括号什么的
+					//暂且不管，后边发现问题再报错，当前节点直接加到父节点的子结点中
 					AddChildNode(ast, p, ast->cur_index);
 				}
 			}
@@ -429,7 +458,7 @@ int express_level(AST_TREE* ast)
 					}
 					else if(last.token_level < ast->nodes[ast->cur_index].level)
 					{
-						AddNodeChild(ast->cur_index, p);
+						AddChildNode(ast, ast->cur_index, p);
 						p = ast->cur_index;
 					}
 					else
@@ -453,7 +482,7 @@ int express_level(AST_TREE* ast)
 					tmpcount = ast->stack.count;
 					tmpnode = ast->cur_index;
 					push_stack(&ast->stack, ast->nodes, -1);
-					p = express2();
+					p = express_level(ast);
 					ast->stack.count = tmpcount;
 					ast->cur_index++;
 					if (ISTOKENTYPE(ast, TOKEN_TYPE_RBRACKET) == FALSE)
@@ -461,11 +490,96 @@ int express_level(AST_TREE* ast)
 						Fault("syntax error start no right bracket (语法错误：没有右括号！)");
 						return -1;
 					}
+					if (ISTOKCATEXOP(ast, ast->cur_index + 1))
+					{
+						//括号右边是运算符，需要将括号前的运算符和括号后的运算符进行优先级比较。
+						if (ISTOKENTYPEX(ast, ast->cur_index + 1, TOKEN_TYPE_ASSIGN))
+						{
+							Fault("syntax error ')' can't with '=' (语法错误：括号后不能接赋值符！)");
+							return -1;
+						}
+						if (ast->nodes[tmpnode - 1].level == ast->nodes[ast->cur_index + 1].level)
+						{
+							//括号前的运算符优先级等于括号后的运算符优先级。
+							AddChildNode(ast, tmpnode - 1, p);
+							p = tmpnode - 1;
+							AddChildNode(ast, ++(ast->cur_index), p);
+							p = ast->cur_index;
+						}
+						else if (ast->nodes[tmpnode - 1].level > ast->nodes[ast->cur_index + 1].level)
+						{
+							AddChildNode(ast, tmpnode - 1, p);
+							p = tmpnode - 1;
+							STACK_DATA data;
+							get_last_stack(&ast->stack, &data);
+							if (data.token_category == ast->nodes[ast->cur_index + 1].category ||
+								data.token_level > ast->nodes[ast->cur_index + 1].level)
+							{
+								state = STATES_DOWN;
+							}
+							else if (data.token_level < ast->nodes[ast->cur_index + 1].level)
+							{
+								AddChildNode(ast, ++(ast->cur_index), p);
+								p = ast->cur_index;
+							}
+							else
+							{
+								Fault("syntax error inop 4 (语法错误：优先级判定失败！位置:express2函数 inop 4)");
+								return -1;
+							}
+						}
+						else
+						{
+							//括号前的运算符优先级小于括号后的运算符优先级。
+							tmpcount = ast->stack.count;
+							push_stack(&ast->stack, ast->nodes, tmpnode - 1);
+							AddChildNode(ast, tmpnode - 1, express_level(ast));
+							p = tmpnode - 1;
+							ast->stack.count = tmpcount;
+						}
+					}
+					else
+					{
+						//括号右边不是运算符。直接将括号表达式的AST加入之前运算符的子节点。
+						AddChildNode(ast, tmpnode - 1, p);
+						p = tmpnode - 1;
+					}
+				}
+				else
+				{
+					Fault("syntax error left bracket (语法错误：左括号右边不是合法的节点！)");
+					return -1;
 				}
 			}
+			else if (ISTOKENTYPE(ast, TOKEN_TYPE_REVERSE))
+			{
+				//操作运算符遇到取反运算符时，因为取反运算符优先级高，所以先生成取反运算符的AST,再将生成的AST作为之前操作运算符的子节点。
+				tmpcount = ast->stack.count;
+				push_stack(&ast->stack, ast->nodes, p);
+				ast->cur_index--;
+				AddChildNode(ast, p, express_level(ast));
+				ast->stack.count = tmpcount;
+			}
+			else if (ISTOKENTYPE2(ast, TOKEN_TYPE_SEMI, TOKEN_TYPE_RBRACKET) &&
+			(ISTOKCATEX(ast, ast->cur_index - 1, TOKEN_CATEGORY_FACTOR)) || ISTOKENTYPEX(ast, ast->cur_index - 1, TOKEN_TYPE_RBRACKET))
+			{
+				//遇到分号或右括号时，表达式结束，直接返回
+				ast->cur_index--;
+				state = STATES_DOWN;
+			}
+			else
+			{
+				Fault("syntax error inop (语法错误，INOP状态时遇到无效的节点！)");
+				return -1;
+			}
+			break;
+			default:
+				Fault("syntax error (语法错误，express2遇到无效的状态机！)");
+				return -1;
 			break;
 		}
 	}
+	return p;
 }
 
 BOOL print_stnt(int p, AST_TREE* ast)
@@ -477,13 +591,13 @@ BOOL print_stnt(int p, AST_TREE* ast)
 	}
 }
 
-BOOL statement(AST_TREE* ast)
+BOOL statement(AST_TREE* ast, int* parent)
 {
 	NODE_DATA* nodes = ast->nodes;
 
 	if (addcurnode(ast) == FALSE)
 		return FALSE;
-
+	int p = -1;
 	if (ISTOKENTYPE(ast, TOKEN_TYPE_RESERVE))
 	{
 		switch (ast->nodes[ast->cur_index].reserve_type)
@@ -493,6 +607,17 @@ BOOL statement(AST_TREE* ast)
 
 		}
 	}
+	else
+	{
+		ast->cur_index--;
+		p = express_level(ast);
+	}
+	ast->cur_index++;
+	if (p == -1)
+		return FALSE;
+	else
+		*parent = p;
+	return TRUE;
 }
 
 BOOL BuildAstTree(AST_TREE* ast)
@@ -502,18 +627,29 @@ BOOL BuildAstTree(AST_TREE* ast)
 	if(ast->is_builded==TRUE)
 		return ReturnFalse("ast is builded");
 
-	InitAstTree(ast);
+//	InitAstTree(ast);
 
+	int p = -1;
 	while (ast->cur_index < ast->count - 1)
 	{
 		if (ast->cur_index == -1)//每一个语句的开始
 		{
-
+			if (statement(ast, &p))
+				ast->rootnode = p;
+			else
+				return FALSE;
 		}
 		else
 		{
-
+			int m_p;
+			if (statement(ast, &m_p))
+			{
+				ast->nodes[p].nextnode = m_p;
+				p = m_p;
+			}
+			else
+				return FALSE;
 		}
 	}
-
+	return TRUE;
 }
