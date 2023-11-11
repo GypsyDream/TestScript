@@ -16,7 +16,7 @@ void PrintNode(NODE_DATA* node, int index)
 
 int main(int argc, char* argv[])
 {
-	char* name = "E:\\zengl\\v0.0.8\\zengl_lang_v0.0.8_forXP\\zengl_lang_v0.0.8\\zengl_lang_v0.0.8\\test.zl";
+	char* name = "test.txt";
 
 	YU_LANGUAGE_DATA data;
 	memset(&data, 0, sizeof(YU_LANGUAGE_DATA));
