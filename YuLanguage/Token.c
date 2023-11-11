@@ -322,3 +322,40 @@ BOOL GetToken(SOURCE_DATA* source, TOKEN_DATA* outData)
 	return TRUE;
 }
 
+
+BOOL ControlTokenArray(TOKEN_ARRAY* arr)
+{
+	if (arr->token == NULL)
+	{
+		arr->size = Default_TokenArray_Size;
+		arr->token = malloc(arr->size * sizeof(TOKEN_DATA));
+		if (arr->token == NULL)
+			return ReturnFalse("Malloc token array failed");
+		memset(arr->token, 0, arr->size * sizeof(TOKEN_DATA));
+	}
+	else if (arr->count >= arr->size)
+	{
+		arr->size += Default_TokenArray_Size;
+		TOKEN_DATA* newBuf = realloc(arr->token, arr->size * sizeof(TOKEN_DATA));
+		if (newBuf == NULL)
+			return ReturnFalse("Realloc token array failed");
+		arr->token = newBuf;
+		memset(arr->token + (arr->count), 0, (arr->size - arr->count) * sizeof(TOKEN_DATA));
+	}
+	return TRUE;
+}
+BOOL GetTokenEx(SOURCE_DATA* source, TOKEN_ARRAY* arr)
+{
+	while (TRUE)
+	{
+		if (ControlTokenArray(arr) == FALSE)
+			return FALSE;
+		if (GetToken(source, &arr->token[arr->count]) == FALSE)
+			return FALSE;
+
+		if (arr->token[arr->count].type == TOKEN_TYPE_ENDFILE)
+			return TRUE;
+
+		arr->count++;
+	}
+}

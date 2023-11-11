@@ -177,37 +177,39 @@ BOOL pop_stack(STACKLIST_DATA* stack)
 	return TRUE;
 }
 
-BOOL AddChildNode(AST_TREE* ast, unsigned int parent, unsigned int child)
+BOOL AddChildNode(AST_TREE* ast, int parent, int child)
 {
 	NODE_CHILD* childs = &ast->nodes[parent].childs;
 	if (childs->size == 0)
 	{
 		childs->size = Default_Child_Size;
-		childs->childnum = malloc(childs->size * sizeof(unsigned int));
+		childs->childnum = malloc(childs->size * sizeof(int));
 		if (childs->childnum == NULL)
 			return ReturnFalse("malloc childs failed");
-		memset(childs->childnum, 0, childs->size * sizeof(unsigned int));
+		memset(childs->childnum, 0, childs->size * sizeof(int));
 	}
 	else if (childs->count >= childs->size)
 	{
 		childs->size += Default_Child_Size;
-		unsigned int* childnum = realloc(childs->childnum, childs->size * sizeof(unsigned int));
+		int* childnum = realloc(childs->childnum, childs->size * sizeof(int));
 		if (childnum == NULL)
 			return ReturnFalse("realloc childs failed");
 		childs->childnum = childnum;
-		memset(childs->childnum + childs->count, 0, (childs->size - childs->count) * sizeof(unsigned int));
+		memset(childs->childnum + childs->count, 0, (childs->size - childs->count) * sizeof(int));
 	}
 
 	childs->childnum[childs->count++] = child;
 
 	return TRUE;
 }
-BOOL RemoveLastChild(NODE_DATA* node, unsigned int* tmp)
+BOOL RemoveLastChild(NODE_DATA* node, int* tmp)
 {
 	if (node->childs.count <= 0)
 		return ReturnFalse("child count less than zero");
 
-	tmp = node->childs.childnum[node->childs.count--];
+	*tmp = node->childs.childnum[node->childs.count];
+	node->childs.childnum[node->childs.count] = -1;
+	node->childs.count--;
 
 	return TRUE;
 }
@@ -229,7 +231,7 @@ int express_level(AST_TREE* ast)
 
 	NODE_DATA* nodes = ast->nodes;
 	PROCESS_STATES state = STATES_START;
-	unsigned int p = -1;//父节点
+	int p = -1;//父节点
 	int tmpcount = 0;
 	int tmpnode = -1;
 
@@ -267,7 +269,7 @@ int express_level(AST_TREE* ast)
 
 					if (!ISTOKENTYPE(ast, TOKEN_TYPE_RBRACKET))
 					{
-						Fault("syntax error start no right bracket (语法错误：只有左括号，没有右括号！)");
+						Fault(&ast->nodes[ast->cur_index], "syntax error start no right bracket (语法错误：只有左括号，没有右括号！)");
 						return -1;
 					}
 					else if (ISTOKENTYPEX2(ast, tmpnode - 1, TOKEN_TYPE_ASSIGN, TOKEN_TYPE_LBRACKET))
@@ -281,7 +283,7 @@ int express_level(AST_TREE* ast)
 					else if (ISTOKENTYPEX(ast, ast->cur_index + 1, TOKEN_TYPE_ASSIGN))
 					{
 						//括号右侧存在赋值符认为是错误语法
-						Fault("syntax error ')' can't with '=' (语法错误：括号后面不能接赋值运算符！)");
+						Fault(&ast->nodes[ast->cur_index], "syntax error ')' can't with '=' (语法错误：括号后面不能接赋值运算符！)");
 						return -1;
 					}
 					else
@@ -292,7 +294,7 @@ int express_level(AST_TREE* ast)
 				}
 				else
 				{
-					Fault("syntax error left bracket (语法错误：左括号右边的节点不是允许的节点！)");
+					Fault(&ast->nodes[ast->cur_index], "syntax error left bracket (语法错误：左括号右边的节点不是允许的节点！)");
 					return -1;
 				}
 			}
@@ -304,7 +306,7 @@ int express_level(AST_TREE* ast)
 			}
 			else
 			{
-				Fault("syntax error start (语法错误：语法解析在start状态时遇到无效的节点！)");
+				Fault(&ast->nodes[ast->cur_index], "syntax error start (语法错误：语法解析在start状态时遇到无效的节点！)");
 				return -1;
 			}
 			break;
@@ -327,7 +329,7 @@ int express_level(AST_TREE* ast)
 			}
 			else
 			{
-				Fault("syntax error inid (语法错误：在express2函数的inid状态遇到无效的节点！)");
+				Fault(&ast->nodes[ast->cur_index], "syntax error inid (语法错误：在express2函数的inid状态遇到无效的节点！)");
 				return -1;
 			}
 			break;
@@ -405,7 +407,7 @@ int express_level(AST_TREE* ast)
 							{
 								//堆栈中的优先级竟然比下一个操作符优先级还高
 								//按道理堆栈中的高优先级操作符至少因该成为下一个操作符的子节点（也可能是上一个），出错
-								Fault("syntax error inop 1 (语法错误：优先级判定失败！位置:express2函数 inop 1)");
+								Fault(&ast->nodes[ast->cur_index], "syntax error inop 1 (语法错误：优先级判定失败！位置:express2函数 inop 1)");
 								return -1;
 							}
 						}
@@ -428,76 +430,87 @@ int express_level(AST_TREE* ast)
 					AddChildNode(ast, p, ast->cur_index);
 				}
 			}
-			else if (ISTOKCATEOP(ast) &&
-				(ISTOKCATEX(ast, ast->cur_index - 1, TOKEN_CATEGORY_FACTOR)) || ISTOKENTYPEX(ast, ast->cur_index - 1, TOKEN_TYPE_RBRACKET))
+			else if (ISTOKCATEOP(ast) && ((ISTOKCATEX(ast, ast->cur_index - 1, TOKEN_CATEGORY_FACTOR)) || ISTOKENTYPEX(ast, ast->cur_index - 1, TOKEN_TYPE_RBRACKET)))
 			{
 				//此节点为操作符，上一节点为因子或右括号,上一次加入的还是一个操作符
-				//将父节点优先级与当前节点比较
+				//此时徐判断之前操作符的优先级与现在这个操作符优先级
 				if (ast->nodes[p].level == ast->nodes[ast->cur_index].level)
 				{
-					//优先级相同，父节点为先执行，将父节点加入当前节点子节点中，父节点变为当前节点
+					//优先级相同，父节点为先执行，优先级高于当前节点操作符，将父节点加入当前节点子节点中，父节点变为当前节点
+					//父节点是操作符，当前节点又是操作符，父节点一定已经有两个子节点了
+					//堆栈中优先级一定比父节点低，所以无需优先级比较
 					AddChildNode(ast, ast->cur_index, p);
+					p = ast->cur_index;
 				}
 				else if (ast->nodes[p].level > ast->nodes[ast->cur_index].level)
 				{
-					//父节点高优先级，此时需要比较当前节点操作符与栈中操作符优先级
-					//若栈中操作符优先级高
-					//若当前节点优先级高于栈中优先级，则优先将父节点加为当前节点子节点
+					//父节点优先级比当前节点高，父节点一定已经有两个子节点，此时不确定堆栈中节点优先级与当前节点谁高
+					//二者优先级高的节点应该成为父节点的父节点
 					STACK_DATA last;
 					get_last_stack(&ast->stack, &last);
 					if (last.token_category == ast->nodes[ast->cur_index].category ||
 						last.token_level > ast->nodes[ast->cur_index].level)
 					{
-						//父节点优先级高于此节点，按正常应为将父节点加为此节点的子节点，
-						//但堆栈中的优先级高于此节点，所以父节点子式生成完成，退出子节点
-						//例如a = b + c * d + e;
-						//此时*为父节点，堆栈中为+，当前节点为+
-						//b*c这一小块就返回堆栈中+的子节点
+						//堆栈中优先级比当前节点高，父节点应成为堆栈中节点的子节点，跳出循环就是出栈操作
+						//所以直接跳出循环，注意cur--，下次循环会++，当前节点还未处理
 						ast->cur_index--;
 						state = STATES_DOWN;
 					}
 					else if(last.token_level < ast->nodes[ast->cur_index].level)
 					{
+						//堆栈中节点小于当前节点，所以父节点应该添加为当前节点的子节点
+						//还不能出栈，循环继续
 						AddChildNode(ast, ast->cur_index, p);
 						p = ast->cur_index;
 					}
 					else
 					{
-						//堆栈中优先级与现状相同但类型不同（不知道啥情况）
-						Fault("syntax error inop 2 (语法错误：优先级判定失败！位置:express2函数 inop 2)");
+						//若堆栈中优先级和当前节点优先级相同，则还是无法判断父节点应当作为谁的子节点。。。
+						Fault(&ast->nodes[ast->cur_index], "syntax error inop 2 (语法错误：优先级判定失败！位置:express2函数 inop 2)");
 						return -1;
 					}
 				}
 				else
 				{
-					//堆栈中优先级与现状相同但类型不同（不知道啥情况）
-					Fault("syntax error inop 3 (语法错误：优先级判定失败！位置:express2函数 inop 3)");
+					//父节点优先级低于当前节点，不知道为啥没被压栈？
+					//理论上是不会出现的错误吧，可能是连着写了几个操作符吧/(ㄒoㄒ)/~~
+					Fault(&ast->nodes[ast->cur_index], "syntax error inop 3 (语法错误：优先级判定失败！位置:express2函数 inop 3)");
 					return -1;
 				}
 			}
 			else if (ISTOKENTYPE(ast, TOKEN_TYPE_LBRACKET))
 			{
+				//碰到左括号，括号内有最高优先级，括号内语法树
 				if (ISTOKENTYPEX6(ast, ast->cur_index + 1, TOKEN_TYPE_ID, TOKEN_TYPE_NUM, TOKEN_TYPE_FLOAT, TOKEN_TYPE_STR, TOKEN_TYPE_LBRACKET, TOKEN_TYPE_REVERSE))
 				{
+					//基础的左括号右侧语法检查
+					//括号内优先级高，压栈生成括号内语法树
 					tmpcount = ast->stack.count;
 					tmpnode = ast->cur_index;
 					push_stack(&ast->stack, ast->nodes, -1);
-					p = express_level(ast);
+					p = express_level(ast);//返回的p是括号内最低优先级的操作符
 					ast->stack.count = tmpcount;
 					ast->cur_index++;
 					if (ISTOKENTYPE(ast, TOKEN_TYPE_RBRACKET) == FALSE)
 					{
-						Fault("syntax error start no right bracket (语法错误：没有右括号！)");
+						Fault(&ast->nodes[ast->cur_index], "syntax error start no right bracket (语法错误：没有右括号！)");
 						return -1;
 					}
+					//此时，代表原先当前节点的tmpnode的归属问题还未明了
+					//关于此处为何没有对原先p进行保存
+					//括号为最高优先级，整个括号可看作一个factor，那么这个factor只可能作为他前一个操作符或者后一个操作符的子节点
+					//那么它只需要他前面与后面操作符进行优先级比较就可以了
 					if (ISTOKCATEXOP(ast, ast->cur_index + 1))
 					{
-						//括号右边是运算符，需要将括号前的运算符和括号后的运算符进行优先级比较。
+						//括号后面又是操作符，括号可能
 						if (ISTOKENTYPEX(ast, ast->cur_index + 1, TOKEN_TYPE_ASSIGN))
 						{
-							Fault("syntax error ')' can't with '=' (语法错误：括号后不能接赋值符！)");
+							Fault(&ast->nodes[ast->cur_index], "syntax error ')' can't with '=' (语法错误：括号后不能接赋值符！)");
 							return -1;
 						}
+						//实际上此处并不能确定tmpnode - 1是操作符，但是实际上确实也无法保证，if switch，while，for等等关键字后面都是括号
+						//所以类似于b（a+c）这种错误，只有生成伪汇编时发现b不是关键字时才能确定
+						
 						if (ast->nodes[tmpnode - 1].level == ast->nodes[ast->cur_index + 1].level)
 						{
 							//括号前的运算符优先级等于括号后的运算符优先级。
@@ -524,7 +537,7 @@ int express_level(AST_TREE* ast)
 							}
 							else
 							{
-								Fault("syntax error inop 4 (语法错误：优先级判定失败！位置:express2函数 inop 4)");
+								Fault(&ast->nodes[ast->cur_index], "syntax error inop 4 (语法错误：优先级判定失败！位置:express2函数 inop 4)");
 								return -1;
 							}
 						}
@@ -547,7 +560,7 @@ int express_level(AST_TREE* ast)
 				}
 				else
 				{
-					Fault("syntax error left bracket (语法错误：左括号右边不是合法的节点！)");
+					Fault(&ast->nodes[ast->cur_index], "syntax error left bracket (语法错误：左括号右边不是合法的节点！)");
 					return -1;
 				}
 			}
@@ -561,7 +574,7 @@ int express_level(AST_TREE* ast)
 				ast->stack.count = tmpcount;
 			}
 			else if (ISTOKENTYPE2(ast, TOKEN_TYPE_SEMI, TOKEN_TYPE_RBRACKET) &&
-			(ISTOKCATEX(ast, ast->cur_index - 1, TOKEN_CATEGORY_FACTOR)) || ISTOKENTYPEX(ast, ast->cur_index - 1, TOKEN_TYPE_RBRACKET))
+			((ISTOKCATEX(ast, ast->cur_index - 1, TOKEN_CATEGORY_FACTOR)) || ISTOKENTYPEX(ast, ast->cur_index - 1, TOKEN_TYPE_RBRACKET)))
 			{
 				//遇到分号或右括号时，表达式结束，直接返回
 				ast->cur_index--;
@@ -569,12 +582,12 @@ int express_level(AST_TREE* ast)
 			}
 			else
 			{
-				Fault("syntax error inop (语法错误，INOP状态时遇到无效的节点！)");
+				Fault(&ast->nodes[ast->cur_index], "syntax error inop (语法错误，INOP状态时遇到无效的节点！)");
 				return -1;
 			}
 			break;
 			default:
-				Fault("syntax error (语法错误，express2遇到无效的状态机！)");
+				Fault(&ast->nodes[ast->cur_index], "syntax error (语法错误，express2遇到无效的状态机！)");
 				return -1;
 			break;
 		}
@@ -584,11 +597,37 @@ int express_level(AST_TREE* ast)
 
 BOOL print_stnt(int p, AST_TREE* ast)
 {
+	int tmpcount;
 	addcurnode(ast);
 	if (ISTOKCATE(ast, TOKEN_CATEGORY_FACTOR) || ISTOKENTYPE2(ast, TOKEN_TYPE_LBRACKET, TOKEN_TYPE_REVERSE))
 	{
-
+		//限定print右边必须是、操作因子、括号或取反
+		tmpcount = ast->stack.count;
+		push_stack(&ast->stack, ast->nodes, -1);
+		ast->cur_index--;
+		AddChildNode(ast, p, express_level(ast));
+		ast->stack.count = tmpcount;
+		addcurnode(ast);
+		if (ISTOKENTYPE(ast, TOKEN_TYPE_SEMI))
+		{
+			ast->cur_index--;
+			return TRUE;
+		}
+		else
+		{
+			return ReturnFalse("print no end semi");
+		}
 	}
+	else if (ISTOKENTYPE(ast, TOKEN_TYPE_SEMI))
+	{
+		ast->cur_index--;
+		return TRUE;
+	}
+	else
+	{
+		return ReturnFalse("print no end semi");
+	}
+	return FALSE;
 }
 
 BOOL statement(AST_TREE* ast, int* parent)
@@ -603,8 +642,11 @@ BOOL statement(AST_TREE* ast, int* parent)
 		switch (ast->nodes[ast->cur_index].reserve_type)
 		{
 		case RESERVE_TYPE_PRINT:
-			ast->p_index = ast->cur_index;
-
+			p = ast->cur_index;
+			print_stnt(p, ast);
+			break;
+		default:
+			return ReturnFalse("unknown reserve");
 		}
 	}
 	else
@@ -651,5 +693,18 @@ BOOL BuildAstTree(AST_TREE* ast)
 				return FALSE;
 		}
 	}
+	return TRUE;
+}
+
+BOOL BuildAstTreeEx(TOKEN_ARRAY* token, AST_TREE* ast)
+{
+	for (int i = 0; i < token->count; i++)
+	{
+		if (AddNode(&token->token[i], ast) == FALSE)
+			return ReturnFalse("Add Token Failed, Token Pos:%d,%d", token->token[i].curline, token->token[i].curcolum);
+	}
+	if (BuildAstTree(ast) == FALSE)
+		return ReturnFalse("Build Act Tree Failed");
+
 	return TRUE;
 }

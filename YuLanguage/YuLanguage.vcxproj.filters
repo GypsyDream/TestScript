@@ -30,12 +30,18 @@
     <ClCompile Include="ASTBuild.c">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="SymTable.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Token.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="ASTBuild.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="SymTable.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

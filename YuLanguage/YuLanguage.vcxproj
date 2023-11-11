@@ -131,10 +131,12 @@
     <ClCompile Include="Comm.c" />
     <ClCompile Include="GlobalStruct.h" />
     <ClCompile Include="mMain.c" />
+    <ClCompile Include="SymTable.c" />
     <ClCompile Include="Token.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ASTBuild.h" />
+    <ClInclude Include="SymTable.h" />
     <ClInclude Include="Token.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

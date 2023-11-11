@@ -12,4 +12,6 @@ BOOL lookupReserve(TOKEN_DATA* outData);
 
 BOOL GetToken(SOURCE_DATA* source, TOKEN_DATA* outData);
 
+BOOL GetTokenEx(SOURCE_DATA* source, TOKEN_ARRAY* arr);
+
 #endif

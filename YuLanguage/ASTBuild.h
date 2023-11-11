@@ -10,4 +10,6 @@ BOOL AddNode(TOKEN_DATA* token, AST_TREE* ast);
 
 BOOL BuildAstTree(AST_TREE* ast);
 
+
+BOOL BuildAstTreeEx(TOKEN_ARRAY* token, AST_TREE* ast);
 #endif
