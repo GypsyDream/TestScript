@@ -187,6 +187,18 @@ typedef enum _RESERVE_TYPE
 	RESERVE_TYPE_ENDIF
 }RESERVE_TYPE;
 
+typedef struct _SOURCE_DATA
+{
+	char* filename;
+	FILE* file;
+	char buf[BUF_SIZE];
+	int cur;
+	BOOL needread;
+
+	int curline;
+	int curcolum;
+}SOURCE_DATA;
+
 typedef struct _TOKEN_DATA
 {
 	int count;
@@ -289,23 +301,20 @@ typedef struct _LINE_COL
 typedef struct _SYMTABLE_DATA
 {
 	char* name;
-	struct _LINE_COL lines;
+	struct _LINE_COL* lines;
 	int mem_loc;
 
 	struct _SYMTABLE_DATA* next;
 }SYMTABLE_DATA;
 
-typedef struct _SOURCE_DATA
-{
-	char* filename;
-	FILE* file;
-	char buf[BUF_SIZE];
-	int cur;
-	BOOL needread;
+#define SYMSIZE 211
+#define SYMDIFF 4
 
-	int curline;
-	int curcolum;
-}SOURCE_DATA;
+typedef struct _SYMTABLE_CONTROL
+{
+	int gl_memloc;
+	struct _SYMTABLE_DATA* symtable[SYMSIZE];		//符号内存数据
+}SYMTABLE_CONTROL;
 
 /*总数据结构*/
 typedef struct _YU_LANGUAGE_DATA
@@ -313,7 +322,7 @@ typedef struct _YU_LANGUAGE_DATA
 	struct _SOURCE_DATA			source;			//源文件信息
 	struct _TOKEN_ARRAY			token;			//因子数组
 	struct _AST_TREE			ast;			//AST语法树数据
-	struct _SYMTABLE_DATA		symtable;		//符号内存数据
+	struct _SYMTABLE_CONTROL	symtable;		//符号内存数据
 }YU_LANGUAGE_DATA;
 
 typedef enum _PROCESS_STATES

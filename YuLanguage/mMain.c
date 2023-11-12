@@ -1,5 +1,6 @@
 #include "Token.h"
 #include "ASTBuild.h"
+#include "SymTable.h"
 
 void PrintNode(NODE_DATA* node, int index)
 {
@@ -12,6 +13,22 @@ void PrintNode(NODE_DATA* node, int index)
 		printf("Child str:%s\n", node[node[index].childs.childnum[i]].strtoken);
 	}
 	printf("\n");
+}
+void PrintSymbal(SYMTABLE_DATA* sym)
+{
+	SYMTABLE_DATA* psym = sym;
+	while (psym != NULL)
+	{
+		LINE_COL* lines = psym->lines;
+		printf("%d %s", psym->mem_loc, psym->name);
+		while (lines != NULL)
+		{
+			printf(" %d:%d", lines->lineno, lines->colno);
+			lines = lines->next;
+		}
+		printf("\n");
+		psym = psym->next;
+	}
 }
 
 int main(int argc, char* argv[])
@@ -37,7 +54,14 @@ int main(int argc, char* argv[])
 	{
 		PrintNode(data.ast.nodes, i);
 	}
-	
+
+	if (buildSymTable(&data.symtable, &data.ast) == FALSE)
+		Fault(NULL, "Sym Table Failed");
+
+	for (int i = 0; i < SYMSIZE; i++)
+	{
+		PrintSymbal(data.symtable.symtable[i]);
+	}
 
 	system("pause");
 	return 0;

@@ -346,16 +346,32 @@ BOOL ControlTokenArray(TOKEN_ARRAY* arr)
 }
 BOOL GetTokenEx(SOURCE_DATA* source, TOKEN_ARRAY* arr)
 {
+	BOOL Ans = FALSE;
 	while (TRUE)
 	{
 		if (ControlTokenArray(arr) == FALSE)
-			return FALSE;
+		{
+			Ans = FALSE;
+			break;
+		}
+			
 		if (GetToken(source, &arr->token[arr->count]) == FALSE)
-			return FALSE;
+		{
+			Ans = FALSE;
+			break;
+		}
+			
 
 		if (arr->token[arr->count].type == TOKEN_TYPE_ENDFILE)
-			return TRUE;
+		{
+			Ans = TRUE;
+			break;
+		}
+			
 
 		arr->count++;
 	}
+	fclose(source->file);
+	source->needread = FALSE;
+	return Ans;
 }
